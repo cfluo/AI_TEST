@@ -8,6 +8,8 @@ class CandyCrushGame {
         this.moves = 30;
         this.isAnimating = false;
         this.gameEnded = false;
+        this.draggedCell = null;
+        this.isDragging = false;
         
         this.initializeGame();
         this.attachEventListeners();
@@ -36,7 +38,22 @@ class CandyCrushGame {
                 cell.className = 'cell';
                 cell.dataset.row = row;
                 cell.dataset.col = col;
+                cell.draggable = true;
+                
+                // 添加事件监听器
                 cell.addEventListener('click', (e) => this.handleCellClick(e));
+                cell.addEventListener('dragstart', (e) => this.handleDragStart(e));
+                cell.addEventListener('dragover', (e) => this.handleDragOver(e));
+                cell.addEventListener('dragenter', (e) => this.handleDragEnter(e));
+                cell.addEventListener('dragleave', (e) => this.handleDragLeave(e));
+                cell.addEventListener('drop', (e) => this.handleDrop(e));
+                cell.addEventListener('dragend', (e) => this.handleDragEnd(e));
+                
+                // 添加触摸事件支持
+                cell.addEventListener('touchstart', (e) => this.handleTouchStart(e), {passive: false});
+                cell.addEventListener('touchmove', (e) => this.handleTouchMove(e), {passive: false});
+                cell.addEventListener('touchend', (e) => this.handleTouchEnd(e), {passive: false});
+                
                 gameBoard.appendChild(cell);
                 this.board[row][col] = null;
             }
@@ -97,7 +114,7 @@ class CandyCrushGame {
     }
     
     handleCellClick(event) {
-        if (this.isAnimating || this.gameEnded) return;
+        if (this.isAnimating || this.gameEnded || this.isDragging) return;
         
         const row = parseInt(event.target.dataset.row);
         const col = parseInt(event.target.dataset.col);
@@ -116,11 +133,227 @@ class CandyCrushGame {
         }
     }
     
+    // 拖拽事件处理
+    handleDragStart(event) {
+        if (this.isAnimating || this.gameEnded) {
+            event.preventDefault();
+            return;
+        }
+        
+        this.isDragging = true;
+        const row = parseInt(event.target.dataset.row);
+        const col = parseInt(event.target.dataset.col);
+        this.draggedCell = {row, col};
+        
+        event.target.classList.add('dragging');
+        event.dataTransfer.setData('text/plain', `${row},${col}`);
+        event.dataTransfer.effectAllowed = 'move';
+        
+        this.updateHint('拖拽到相邻的方块来交换位置');
+        
+        // 取消之前的选择
+        this.deselectCell();
+    }
+    
+    handleDragOver(event) {
+        if (this.isAnimating || this.gameEnded || !this.isDragging) return;
+        
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+    }
+    
+    handleDragEnter(event) {
+        if (this.isAnimating || this.gameEnded || !this.isDragging) return;
+        
+        const row = parseInt(event.target.dataset.row);
+        const col = parseInt(event.target.dataset.col);
+        const dropCell = {row, col};
+        
+        // 检查是否是有效的拖拽目标
+        if (this.draggedCell && 
+            !(this.draggedCell.row === row && this.draggedCell.col === col) &&
+            this.areAdjacent(this.draggedCell, dropCell)) {
+            event.target.classList.add('drag-over');
+        } else if (this.draggedCell && 
+                   !(this.draggedCell.row === row && this.draggedCell.col === col)) {
+            event.target.classList.add('drag-invalid');
+        }
+    }
+    
+    handleDragLeave(event) {
+        if (this.isAnimating || this.gameEnded) return;
+        
+        event.target.classList.remove('drag-over', 'drag-invalid');
+    }
+    
+    handleDrop(event) {
+        if (this.isAnimating || this.gameEnded || !this.isDragging) return;
+        
+        event.preventDefault();
+        
+        const row = parseInt(event.target.dataset.row);
+        const col = parseInt(event.target.dataset.col);
+        const dropCell = {row, col};
+        
+        // 清除所有拖拽样式
+        this.clearDragStyles();
+        
+        if (this.draggedCell && 
+            !(this.draggedCell.row === row && this.draggedCell.col === col) &&
+            this.areAdjacent(this.draggedCell, dropCell)) {
+            
+            // 执行交换
+            this.attemptSwap(this.draggedCell, dropCell);
+        } else {
+            this.updateHint('只能与相邻的方块交换位置！');
+        }
+        
+        this.draggedCell = null;
+        this.isDragging = false;
+    }
+    
+    handleDragEnd(event) {
+        if (this.isAnimating || this.gameEnded) return;
+        
+        event.target.classList.remove('dragging');
+        this.clearDragStyles();
+        this.draggedCell = null;
+        this.isDragging = false;
+        
+        if (!this.isAnimating) {
+            this.updateHint('点击或拖拽方块来交换位置');
+        }
+    }
+    
+    clearDragStyles() {
+        const cells = document.querySelectorAll('.cell');
+        cells.forEach(cell => {
+            cell.classList.remove('drag-over', 'drag-invalid');
+        });
+    }
+    
+    // 触摸事件处理（移动设备支持）
+    handleTouchStart(event) {
+        if (this.isAnimating || this.gameEnded) {
+            event.preventDefault();
+            return;
+        }
+        
+        this.touchStartTime = Date.now();
+        const touch = event.touches[0];
+        const row = parseInt(event.target.dataset.row);
+        const col = parseInt(event.target.dataset.col);
+        
+        this.touchStartCell = {row, col, element: event.target};
+        this.touchStartPos = {x: touch.clientX, y: touch.clientY};
+        
+        // 添加轻微的视觉反馈
+        event.target.style.transform = 'scale(1.05)';
+    }
+    
+    handleTouchMove(event) {
+        if (this.isAnimating || this.gameEnded || !this.touchStartCell) return;
+        
+        event.preventDefault();
+        const touch = event.touches[0];
+        const currentPos = {x: touch.clientX, y: touch.clientY};
+        
+        // 计算移动距离
+        const deltaX = currentPos.x - this.touchStartPos.x;
+        const deltaY = currentPos.y - this.touchStartPos.y;
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        
+        // 如果移动距离超过阈值，开始拖拽模式
+        if (distance > 20 && !this.isDragging) {
+            this.isDragging = true;
+            this.draggedCell = this.touchStartCell;
+            this.touchStartCell.element.classList.add('dragging');
+            this.updateHint('拖拽到相邻的方块来交换位置');
+            this.deselectCell();
+        }
+        
+        if (this.isDragging) {
+            // 找到当前触摸点下的元素
+            const elementBelow = document.elementFromPoint(currentPos.x, currentPos.y);
+            
+            if (elementBelow && elementBelow.classList.contains('cell')) {
+                // 清除之前的高亮
+                this.clearDragStyles();
+                
+                const row = parseInt(elementBelow.dataset.row);
+                const col = parseInt(elementBelow.dataset.col);
+                const dropCell = {row, col};
+                
+                if (this.draggedCell && 
+                    !(this.draggedCell.row === row && this.draggedCell.col === col) &&
+                    this.areAdjacent(this.draggedCell, dropCell)) {
+                    elementBelow.classList.add('drag-over');
+                } else if (this.draggedCell && 
+                           !(this.draggedCell.row === row && this.draggedCell.col === col)) {
+                    elementBelow.classList.add('drag-invalid');
+                }
+            }
+        }
+    }
+    
+    handleTouchEnd(event) {
+        if (this.isAnimating || this.gameEnded) return;
+        
+        const touchEndTime = Date.now();
+        const touchDuration = touchEndTime - this.touchStartTime;
+        
+        // 重置变换
+        if (this.touchStartCell) {
+            this.touchStartCell.element.style.transform = '';
+        }
+        
+        if (this.isDragging && this.draggedCell) {
+            // 处理拖拽结束
+            const touch = event.changedTouches[0];
+            const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+            
+            if (elementBelow && elementBelow.classList.contains('cell')) {
+                const row = parseInt(elementBelow.dataset.row);
+                const col = parseInt(elementBelow.dataset.col);
+                const dropCell = {row, col};
+                
+                if (this.draggedCell && 
+                    !(this.draggedCell.row === row && this.draggedCell.col === col) &&
+                    this.areAdjacent(this.draggedCell, dropCell)) {
+                    
+                    this.attemptSwap(this.draggedCell, dropCell);
+                } else {
+                    this.updateHint('只能与相邻的方块交换位置！');
+                }
+            }
+            
+            // 清理拖拽状态
+            if (this.draggedCell && this.draggedCell.element) {
+                this.draggedCell.element.classList.remove('dragging');
+            }
+            this.clearDragStyles();
+        } else if (touchDuration < 300 && !this.isDragging) {
+            // 短触摸，当作点击处理
+            this.handleCellClick(event);
+        }
+        
+        // 重置触摸状态
+        this.touchStartCell = null;
+        this.touchStartPos = null;
+        this.touchStartTime = null;
+        this.draggedCell = null;
+        this.isDragging = false;
+        
+        if (!this.isAnimating) {
+            this.updateHint('点击或拖拽方块来交换位置');
+        }
+    }
+    
     selectCell(row, col) {
         this.selectedCell = {row, col};
         const cell = document.querySelector(`[data-row="${row}"][data-col="${col}"]`);
         cell.classList.add('selected');
-        this.updateHint('点击相邻的方块来交换位置');
+        this.updateHint('点击相邻的方块来交换位置，或拖拽到相邻方块');
     }
     
     deselectCell() {
@@ -128,7 +361,7 @@ class CandyCrushGame {
             const cell = document.querySelector(`[data-row="${this.selectedCell.row}"][data-col="${this.selectedCell.col}"]`);
             cell.classList.remove('selected');
             this.selectedCell = null;
-            this.updateHint('点击方块来选择');
+            this.updateHint('点击或拖拽方块来交换位置');
         }
     }
     
@@ -141,6 +374,16 @@ class CandyCrushGame {
     async attemptSwap(cell1, cell2) {
         this.isAnimating = true;
         this.deselectCell();
+        
+        // 添加交换动画效果
+        const cell1Element = document.querySelector(`[data-row="${cell1.row}"][data-col="${cell1.col}"]`);
+        const cell2Element = document.querySelector(`[data-row="${cell2.row}"][data-col="${cell2.col}"]`);
+        
+        cell1Element.classList.add('swap-animation');
+        cell2Element.classList.add('swap-animation');
+        
+        // 等待动画完成
+        await new Promise(resolve => setTimeout(resolve, 300));
         
         // 执行交换
         this.swapGems(cell1, cell2);
@@ -158,6 +401,10 @@ class CandyCrushGame {
             this.swapGems(cell1, cell2);
             this.updateHint('这次交换没有形成匹配！');
         }
+        
+        // 清除动画样式
+        cell1Element.classList.remove('swap-animation');
+        cell2Element.classList.remove('swap-animation');
         
         this.isAnimating = false;
     }
@@ -400,10 +647,12 @@ class CandyCrushGame {
         this.gameEnded = false;
         this.selectedCell = null;
         this.isAnimating = false;
+        this.draggedCell = null;
+        this.isDragging = false;
         
         document.getElementById('gameOverModal').style.display = 'none';
         this.initializeGame();
-        this.updateHint('点击方块来选择');
+        this.updateHint('点击或拖拽方块来交换位置');
     }
     
     showHint() {
