@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>消消乐游戏</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="game-container">
+        <header>
+            <h1>🍭 消消乐</h1>
+            <div class="score-board">
+                <div class="score-item">
+                    <span class="score-label">得分</span>
+                    <span class="score-value" id="score">0</span>
+                </div>
+                <div class="score-item">
+                    <span class="score-label">移动</span>
+                    <span class="score-value" id="moves">30</span>
+                </div>
+            </div>
+        </header>
+        
+        <main>
+            <div class="game-board" id="gameBoard">
+                <!-- 游戏网格将通过JavaScript动态生成 -->
+            </div>
+            
+            <div class="game-info">
+                <div class="hint" id="hint">点击相邻的方块来交换位置</div>
+                <div class="controls">
+                    <button class="btn btn-primary" id="newGameBtn">新游戏</button>
+                    <button class="btn btn-secondary" id="hintBtn">提示</button>
+                </div>
+            </div>
+        </main>
+        
+        <div class="modal" id="gameOverModal" style="display: none;">
+            <div class="modal-content">
+                <h2 id="gameOverTitle">游戏结束</h2>
+                <p id="gameOverMessage">你的最终得分是：<span id="finalScore">0</span></p>
+                <button class="btn btn-primary" id="restartBtn">重新开始</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
